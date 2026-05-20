@@ -1,0 +1,40 @@
+name: lms-vid-transcode-pip
+
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lms-vid-transcode-pip:local
+    platform: linux/amd64
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      # Containers cannot reach host services through localhost.
+      # Keep backend and worker on the same Redis. Override DOCKER_REDIS_HOST=redis
+      # when running the optional redis service below.
+      REDIS_HOST: ${DOCKER_REDIS_HOST:-host.docker.internal}
+      REDIS_PORT: ${DOCKER_REDIS_PORT:-6379}
+      BACKEND_URL: ${DOCKER_BACKEND_URL:-http://host.docker.internal:3000}
+      WORK_DIR: /work
+    volumes:
+      - transcode-work:/work
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  redis:
+    image: redis:7-alpine
+    profiles:
+      - redis
+    restart: unless-stopped
+    ports:
+      - "${DOCKER_REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+volumes:
+  transcode-work:
+  redis-data:

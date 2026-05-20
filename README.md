@@ -86,3 +86,36 @@ packager
 ```
 
 The Dockerfile installs FFmpeg and downloads the Shaka Packager binary.
+
+## Docker
+
+Build the worker image:
+
+```bash
+docker compose build worker
+```
+
+Run the worker against Redis/backend running on your host machine:
+
+```bash
+docker compose up worker
+```
+
+Inside Docker, `localhost` means the worker container, not your Mac/VM host. The compose file therefore overrides:
+
+```env
+REDIS_HOST=host.docker.internal
+BACKEND_URL=http://host.docker.internal:3000
+```
+
+Backend and worker must use the same Redis instance. If backend is using a Redis container exposed on host port `6379`, the default compose setup is enough.
+
+To let this compose file also run Redis:
+
+```bash
+DOCKER_REDIS_HOST=redis docker compose --profile redis up worker redis
+```
+
+Then make sure `lms-backend` also points to that same Redis instance, for example through host port `6379`.
+
+On Apple Silicon, the compose file pins the worker to `linux/amd64` because the Shaka Packager binary is downloaded as `packager-linux-x64`.
