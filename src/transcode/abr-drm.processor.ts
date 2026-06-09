@@ -78,13 +78,13 @@ export class AbrDrmProcessor {
       await this.generateThumbnail(dirs.inputPath, path.join(dirs.packageDir, 'thumbnail.jpg'), probe.duration);
       await job.updateProgress(24);
 
-      logger.info({ lessonId, variants: renditionSettings.map((rendition) => rendition.name) }, 'Starting FFmpeg ABR transcode');
-      await this.transcodeRenditions(dirs.inputPath, dirs.intermediateDir, probe);
-      logger.info({ lessonId, intermediateDir: dirs.intermediateDir }, 'FFmpeg ABR transcode complete');
+      logger.info({ lessonId }, 'Starting FFmpeg ABR transcode');
+      const validRenditions = await this.transcodeRenditions(dirs.inputPath, dirs.intermediateDir, probe);
+      logger.info({ lessonId, intermediateDir: dirs.intermediateDir, variants: validRenditions.map(r => r.name) }, 'FFmpeg ABR transcode complete');
       await job.updateProgress(60);
 
       logger.info({ lessonId, packageDir: dirs.packageDir }, 'Starting Shaka DRM packaging');
-      await this.packageWithShaka(dirs.intermediateDir, dirs.packageDir, drmKeys);
+      await this.packageWithShaka(dirs.intermediateDir, dirs.packageDir, drmKeys, validRenditions);
       logger.info({ lessonId, packageDir: dirs.packageDir }, 'Shaka DRM packaging complete');
       await job.updateProgress(78);
 
@@ -134,12 +134,23 @@ export class AbrDrmProcessor {
 
   private async transcodeRenditions(inputPath: string, intermediateDir: string, probe: VideoProbe) {
     const gopFrames = Math.max(24, Math.round(probe.fps * env.processing.segmentDurationSeconds));
-    const filterGraph = renditionSettings
-      .map(
-        (rendition, index) =>
-          `[v${index}]scale=w=${rendition.width}:h=${rendition.height}:force_original_aspect_ratio=decrease:force_divisible_by=2,` +
-          `pad=${rendition.width}:${rendition.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p[v${rendition.name}]`,
-      )
+    
+    // Filter out renditions that are strictly larger than the input video
+    // We always keep at least the lowest rendition if the input is smaller than all of them
+    const validRenditions = renditionSettings.filter((r, i) => r.height <= probe.height || i === renditionSettings.length - 1);
+
+    const filterGraph = validRenditions
+      .map((rendition, index) => {
+        let targetH = Math.min(rendition.height, probe.height);
+        let targetW = Math.round(targetH * (probe.width / probe.height));
+        // Ensure dimensions are even
+        targetW = Math.round(targetW / 2) * 2;
+        targetH = Math.round(targetH / 2) * 2;
+        
+        logger.info({ rendition: rendition.name, targetW, targetH }, 'Calculated GPU scaling dimensions');
+        
+        return `[v${index}]scale_cuda=w=${targetW}:h=${targetH}[v${rendition.name}]`;
+      })
       .join(';');
 
     const args = [
@@ -150,6 +161,10 @@ export class AbrDrmProcessor {
       '+genpts',
       '-err_detect',
       'ignore_err',
+      '-hwaccel',
+      'cuda',
+      '-hwaccel_output_format',
+      'cuda',
       '-analyzeduration',
       '100M',
       '-probesize',
@@ -157,23 +172,31 @@ export class AbrDrmProcessor {
       '-i',
       inputPath,
       '-filter_complex',
-      `[0:v]split=${renditionSettings.length}${renditionSettings.map((_, index) => `[v${index}]`).join('')};${filterGraph}`,
+      `[0:v]split=${validRenditions.length}${validRenditions.map((_, index) => `[v${index}]`).join('')};${filterGraph}`,
     ];
 
-    for (const rendition of renditionSettings) {
+    for (const rendition of validRenditions) {
       args.push(
         '-map',
         `[v${rendition.name}]`,
         '-c:v',
-        'libx264',
+        'h264_nvenc',
         '-preset',
-        env.processing.x264Preset,
+        env.processing.nvencPreset,
+        '-tune',
+        'hq',
+        '-rc',
+        'vbr',
+        '-cq',
+        '28',
+        '-multipass',
+        'qres',
+        '-bf',
+        '3',
         '-profile:v',
         'high',
         '-level',
         rendition.name === '1080p' ? '4.1' : '3.1',
-        '-pix_fmt',
-        'yuv420p',
         '-r',
         String(Math.round(probe.fps)),
         '-g',
@@ -190,8 +213,6 @@ export class AbrDrmProcessor {
         rendition.maxrate,
         '-bufsize',
         rendition.bufsize,
-        '-threads',
-        String(env.processing.ffmpegThreads),
         '-an',
         '-movflags',
         '+faststart',
@@ -219,6 +240,12 @@ export class AbrDrmProcessor {
         path.join(intermediateDir, 'audio_raw.mp4'),
       );
     }
+
+    logger.info({ 
+      renditions: validRenditions.map(r => r.name), 
+      preset: env.processing.nvencPreset,
+      hwaccel: 'cuda' 
+    }, 'Executing hardware-accelerated NVENC FFmpeg command');
 
     await runCommand('ffmpeg', args, { label: 'ffmpeg ABR transcode' });
 
@@ -251,20 +278,23 @@ export class AbrDrmProcessor {
         { label: 'ffmpeg silent audio' },
       );
     }
+
+    return validRenditions;
   }
 
   private async packageWithShaka(
     intermediateDir: string,
     packageDir: string,
     keys: { keyIdHex: string; contentKeyHex: string },
+    validRenditions: typeof renditionSettings[number][],
   ) {
     await Promise.all(
-      [...renditionSettings.map((rendition) => rendition.name), 'audio'].map((folder) =>
+      [...validRenditions.map((rendition) => rendition.name), 'audio'].map((folder) =>
         fs.mkdir(path.join(packageDir, folder), { recursive: true }),
       ),
     );
 
-    const streamDescriptors = renditionSettings.map((rendition) =>
+    const streamDescriptors = validRenditions.map((rendition) =>
       [
         `in=${path.join(intermediateDir, `${rendition.name}_raw.mp4`)}`,
         'stream=video',
@@ -319,7 +349,7 @@ export class AbrDrmProcessor {
   }
 
   private async generateThumbnail(inputPath: string, outputPath: string, duration: number) {
-    const seekSeconds = Math.min(1, Math.max(0, Math.floor(duration / 2)));
+    const seekSeconds = Math.floor(duration / 2);
     await runCommand(
       'ffmpeg',
       [

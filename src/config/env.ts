@@ -25,7 +25,7 @@ const envSchema = z.object({
   REDIS_PORT: z.coerce.number().int().positive().default(6379),
   REDIS_PASSWORD: optionalString,
   REDIS_TLS: boolFromString.default(false),
-  WORKER_CONCURRENCY: z.coerce.number().int().positive().default(1),
+  WORKER_CONCURRENCY: z.coerce.number().int().positive().default(8),
   WORKER_LOCK_DURATION_MS: z.coerce.number().int().positive().default(7_200_000),
   WORKER_LOCK_RENEW_TIME_MS: z.coerce.number().int().positive().default(60_000),
   ACE_S3_ENDPOINT: optionalString,
@@ -49,8 +49,8 @@ const envSchema = z.object({
   WORK_DIR: z.string().default('/tmp/lms-vid-transcode-pip'),
   MIN_FREE_DISK_BYTES: z.coerce.number().int().positive().default(15_000_000_000),
   SEGMENT_DURATION_SECONDS: z.coerce.number().positive().default(2),
-  FFMPEG_THREADS: z.coerce.number().int().positive().default(6),
-  X264_PRESET: z.string().default('veryfast'),
+  FFMPEG_THREADS: z.coerce.number().int().positive().default(2),
+  NVENC_PRESET: z.string().default('p5'),
   CLEANUP_WORK_DIR: boolFromString.default(true),
 });
 
@@ -89,7 +89,7 @@ export const env = {
     minFreeDiskBytes: parsed.MIN_FREE_DISK_BYTES,
     segmentDurationSeconds: parsed.SEGMENT_DURATION_SECONDS,
     ffmpegThreads: parsed.FFMPEG_THREADS,
-    x264Preset: parsed.X264_PRESET,
+    nvencPreset: parsed.NVENC_PRESET,
     cleanupWorkDir: parsed.CLEANUP_WORK_DIR,
   },
 };
