@@ -149,7 +149,7 @@ export class AbrDrmProcessor {
         
         logger.info({ rendition: rendition.name, targetW, targetH }, 'Calculated GPU scaling dimensions');
         
-        return `[v${index}]scale_cuda=w=${targetW}:h=${targetH}[v${rendition.name}]`;
+        return `[v${index}]scale_cuda=w=${targetW}:h=${targetH}:format=yuv420p[v${rendition.name}]`;
       })
       .join(';');
 
@@ -165,6 +165,8 @@ export class AbrDrmProcessor {
       'cuda',
       '-hwaccel_output_format',
       'cuda',
+      '-extra_hw_frames',
+      '64',
       '-analyzeduration',
       '100M',
       '-probesize',
