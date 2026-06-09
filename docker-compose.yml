@@ -5,6 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      network: host  
     image: lms-vid-transcode-pip:local
     platform: linux/amd64
     restart: unless-stopped
