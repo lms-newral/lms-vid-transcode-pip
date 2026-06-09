@@ -14,13 +14,8 @@ services:
     environment:
       NODE_ENV: production
       WORK_DIR: /work
-    volumes:
-      - transcode-work:/work
     networks:
       - mtu_fixed_net
-
-volumes:
-  transcode-work:
 
 networks:
   mtu_fixed_net:
