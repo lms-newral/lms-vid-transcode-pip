@@ -32,10 +32,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 
-RUN groupadd -r node && useradd -r -g node node \
-  && mkdir -p /work /tmp/lms-vid-transcode-pip \
-  && chown -R node:node /work /tmp/lms-vid-transcode-pip /app
-USER node
+RUN mkdir -p /work /tmp/lms-vid-transcode-pip
 
 ENV NODE_ENV=production
 ENV WORK_DIR=/work
