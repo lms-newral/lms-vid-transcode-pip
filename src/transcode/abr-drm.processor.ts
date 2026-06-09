@@ -151,8 +151,6 @@ export class AbrDrmProcessor {
       'cuda',
       '-hwaccel_output_format',
       'cuda',
-      '-extra_hw_frames',
-      '64',
       '-analyzeduration',
       '100M',
       '-probesize',
