@@ -164,6 +164,13 @@ export class AbrDrmProcessor {
     for (const rendition of validRenditions) {
       let targetH = Math.min(rendition.height, probe.height);
       let targetW = Math.round(targetH * (probe.width / probe.height));
+
+      // Bounding box: if the calculated width exceeds the rendition's max width, scale by width instead
+      if (targetW > rendition.width) {
+        targetW = Math.min(rendition.width, probe.width);
+        targetH = Math.round(targetW / (probe.width / probe.height));
+      }
+
       targetW = Math.round(targetW / 2) * 2;
       targetH = Math.round(targetH / 2) * 2;
 
@@ -190,8 +197,6 @@ export class AbrDrmProcessor {
         '3',
         '-profile:v',
         'high',
-        '-level',
-        rendition.name === '1080p' ? '4.1' : '3.1',
         '-r',
         String(Math.round(probe.fps)),
         '-g',
