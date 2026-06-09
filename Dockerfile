@@ -1,4 +1,5 @@
-FROM node:20-bookworm-slim AS builder
+# ── Stage 1: TypeScript build ──
+FROM node:20-bookworm-slim AS ts-builder
 
 WORKDIR /app
 COPY package*.json ./
@@ -7,6 +8,7 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
+# ── Stage 2: Download Shaka Packager ──
 FROM debian:bookworm-slim AS tool-downloader
 ARG DEBIAN_FRONTEND=noninteractive
 RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4 \
@@ -16,21 +18,74 @@ RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4 \
 RUN curl -L https://github.com/shaka-project/shaka-packager/releases/latest/download/packager-linux-x64 -o /usr/local/bin/packager
 RUN chmod +x /usr/local/bin/packager
 
-FROM nvidia/cuda:12.2.2-base-ubuntu22.04
+# ── Stage 3: Compile FFmpeg with full CUDA filter support ──
+FROM nvidia/cuda:12.2.2-devel-ubuntu22.04 AS ffmpeg-builder
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4 \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends \
+     build-essential git pkg-config yasm nasm \
+     libx264-dev libx265-dev libfdk-aac-dev libmp3lame-dev libopus-dev \
+     libvpx-dev libass-dev libnuma-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install nv-codec-headers (must match driver version)
+RUN git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git /tmp/nv-codec-headers \
+  && cd /tmp/nv-codec-headers \
+  && make install \
+  && rm -rf /tmp/nv-codec-headers
+
+# Compile FFmpeg 6.1 (stable) with CUDA + NPP support
+RUN git clone --depth 1 --branch n6.1 https://git.ffmpeg.org/ffmpeg.git /tmp/ffmpeg \
+  && cd /tmp/ffmpeg \
+  && ./configure \
+     --prefix=/usr/local \
+     --enable-gpl \
+     --enable-nonfree \
+     --enable-cuda-nvcc \
+     --enable-libnpp \
+     --enable-libx264 \
+     --enable-libx265 \
+     --enable-libfdk-aac \
+     --enable-libmp3lame \
+     --enable-libopus \
+     --enable-libvpx \
+     --enable-libass \
+     --extra-cflags="-I/usr/local/cuda/include" \
+     --extra-ldflags="-L/usr/local/cuda/lib64" \
+  && make -j$(nproc) \
+  && make install \
+  && rm -rf /tmp/ffmpeg
+
+# ── Stage 4: Production runtime ──
+FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04
 
 WORKDIR /app
 ARG DEBIAN_FRONTEND=noninteractive
 RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4 \
   && apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl dumb-init ffmpeg \
+  && apt-get install -y --no-install-recommends \
+     ca-certificates curl dumb-init \
+     libx264-163 libx265-199 libfdk-aac2 libmp3lame0 libopus0 \
+     libvpx7 libass9 libnuma1 \
   && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
   && apt-get install -y nodejs \
   && rm -rf /var/lib/apt/lists/*
 
+# Copy custom-compiled FFmpeg binaries + shared libs
+COPY --from=ffmpeg-builder /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
+COPY --from=ffmpeg-builder /usr/local/bin/ffprobe /usr/local/bin/ffprobe
+COPY --from=ffmpeg-builder /usr/local/lib/lib*.so* /usr/local/lib/
+RUN ldconfig
+
+# Copy Shaka Packager
 COPY --from=tool-downloader /usr/local/bin/packager /usr/local/bin/packager
+
+# Install Node dependencies
 COPY package*.json ./
 RUN npm ci --omit=dev
-COPY --from=builder /app/dist ./dist
+COPY --from=ts-builder /app/dist ./dist
 
 RUN mkdir -p /work /tmp/lms-vid-transcode-pip
 

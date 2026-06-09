@@ -22,7 +22,7 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [gpu, video]
     networks:
       - mtu_fixed_net
 
