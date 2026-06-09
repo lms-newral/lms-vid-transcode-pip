@@ -149,8 +149,6 @@ export class AbrDrmProcessor {
       'ignore_err',
       '-hwaccel',
       'cuda',
-      '-hwaccel_output_format',
-      'cuda',
       '-analyzeduration',
       '100M',
       '-probesize',
