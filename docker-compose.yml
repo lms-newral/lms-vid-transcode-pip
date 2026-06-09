@@ -15,6 +15,14 @@ services:
       WORK_DIR: /work
     volumes:
       - transcode-work:/work
+    networks:
+      - mtu_fixed_net
 
 volumes:
   transcode-work:
+
+networks:
+  mtu_fixed_net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: "1400"
