@@ -169,7 +169,7 @@ export class AbrDrmProcessor {
         '-map',
         '0:v:0',
         '-vf',
-        `scale_cuda=w=${targetW}:h=${targetH}`,
+        `hwupload_cuda,scale_cuda=w=${targetW}:h=${targetH}`,
         '-c:v',
         'h264_nvenc',
         '-preset',
