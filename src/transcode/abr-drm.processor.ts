@@ -139,20 +139,6 @@ export class AbrDrmProcessor {
     // We always keep at least the lowest rendition if the input is smaller than all of them
     const validRenditions = renditionSettings.filter((r, i) => r.height <= probe.height || i === renditionSettings.length - 1);
 
-    const filterGraph = validRenditions
-      .map((rendition, index) => {
-        let targetH = Math.min(rendition.height, probe.height);
-        let targetW = Math.round(targetH * (probe.width / probe.height));
-        // Ensure dimensions are even
-        targetW = Math.round(targetW / 2) * 2;
-        targetH = Math.round(targetH / 2) * 2;
-        
-        logger.info({ rendition: rendition.name, targetW, targetH }, 'Calculated GPU scaling dimensions');
-        
-        return `[v${index}]scale_cuda=w=${targetW}:h=${targetH}:format=yuv420p[v${rendition.name}]`;
-      })
-      .join(';');
-
     const args = [
       '-hide_banner',
       '-nostdin',
@@ -173,14 +159,21 @@ export class AbrDrmProcessor {
       '100M',
       '-i',
       inputPath,
-      '-filter_complex',
-      `[0:v]split=${validRenditions.length}${validRenditions.map((_, index) => `[v${index}]`).join('')};${filterGraph}`,
     ];
 
     for (const rendition of validRenditions) {
+      let targetH = Math.min(rendition.height, probe.height);
+      let targetW = Math.round(targetH * (probe.width / probe.height));
+      targetW = Math.round(targetW / 2) * 2;
+      targetH = Math.round(targetH / 2) * 2;
+
+      logger.info({ rendition: rendition.name, targetW, targetH }, 'Calculated GPU scaling dimensions');
+
       args.push(
         '-map',
-        `[v${rendition.name}]`,
+        '0:v:0',
+        '-vf',
+        `scale_cuda=w=${targetW}:h=${targetH}`,
         '-c:v',
         'h264_nvenc',
         '-preset',
