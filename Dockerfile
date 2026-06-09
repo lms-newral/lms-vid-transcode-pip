@@ -8,7 +8,9 @@ COPY src ./src
 RUN npm run build
 
 FROM debian:bookworm-slim AS tool-downloader
-RUN apt-get update \
+ARG DEBIAN_FRONTEND=noninteractive
+RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4 \
+  && apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl \
   && rm -rf /var/lib/apt/lists/*
 RUN curl -L https://github.com/shaka-project/shaka-packager/releases/latest/download/packager-linux-x64 -o /usr/local/bin/packager
@@ -17,7 +19,9 @@ RUN chmod +x /usr/local/bin/packager
 FROM nvidia/cuda:12.2.2-base-ubuntu22.04
 
 WORKDIR /app
-RUN apt-get update \
+ARG DEBIAN_FRONTEND=noninteractive
+RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4 \
+  && apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl dumb-init ffmpeg \
   && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
   && apt-get install -y nodejs \
