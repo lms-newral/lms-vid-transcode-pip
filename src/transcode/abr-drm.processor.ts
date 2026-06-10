@@ -234,7 +234,7 @@ export class AbrDrmProcessor {
         '-ac',
         '2',
         '-af',
-        'aresample=async=1:first_pts=0',
+        'aresample=async=1',
         '-movflags',
         '+faststart',
         path.join(intermediateDir, 'audio_raw.mp4'),
