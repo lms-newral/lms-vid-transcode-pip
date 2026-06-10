@@ -56,30 +56,43 @@ export class S3Service {
     
     const durationSec = (Date.now() - startTime) / 1000;
     const sizeMb = stat.size / (1024 * 1024);
-    const speedMbps = durationSec > 0 ? (sizeMb / durationSec).toFixed(2) : '0.00';
+    const speedMBps = durationSec > 0 ? (sizeMb / durationSec).toFixed(2) : '0.00';
+    const speedMbps = durationSec > 0 ? ((sizeMb * 8) / durationSec).toFixed(2) : '0.00';
 
-    logger.info({ key, size: stat.size, durationSec, speedMbps }, `Source video downloaded at ${speedMbps} MB/s`);
+    logger.info({ key, size: stat.size, durationSec, speedMBps, speedMbps }, `Source video downloaded at ${speedMBps} MB/s (${speedMbps} Mbps)`);
   }
 
   async uploadDirectory(localDir: string, s3Prefix: string) {
     const files = await walkFiles(localDir);
-    logger.info({ localDir, s3Prefix, fileCount: files.length }, 'Uploading packaged outputs to S3');
+    logger.info({ localDir, s3Prefix, fileCount: files.length }, `Starting S3 upload of ${files.length} packaged files`);
     const startTime = Date.now();
     let totalBytes = 0;
+    let uploadedCount = 0;
+    let lastLogTime = Date.now();
 
-    await runLimited(files, 4, async (filePath) => {
+    await runLimited(files, 50, async (filePath) => {
       const stat = await fsPromises.stat(filePath);
       totalBytes += stat.size;
       const relative = path.relative(localDir, filePath).split(path.sep).join('/');
       const key = `${s3Prefix.replace(/\/$/, '')}/${relative}`;
       await this.uploadFile(filePath, key);
+      
+      uploadedCount++;
+      const now = Date.now();
+      // Log progress every 2 seconds or on the very last file
+      if (now - lastLogTime > 2000 || uploadedCount === files.length) {
+        const percent = Math.round((uploadedCount / files.length) * 100);
+        logger.info(`S3 Upload Progress: ${uploadedCount}/${files.length} files (${percent}%)`);
+        lastLogTime = now;
+      }
     });
 
     const durationSec = (Date.now() - startTime) / 1000;
     const sizeMb = totalBytes / (1024 * 1024);
-    const speedMbps = durationSec > 0 ? (sizeMb / durationSec).toFixed(2) : '0.00';
+    const speedMBps = durationSec > 0 ? (sizeMb / durationSec).toFixed(2) : '0.00';
+    const speedMbps = durationSec > 0 ? ((sizeMb * 8) / durationSec).toFixed(2) : '0.00';
 
-    logger.info({ s3Prefix, fileCount: files.length, totalBytes, durationSec, speedMbps }, `Packaged outputs uploaded to S3 at ${speedMbps} MB/s`);
+    logger.info({ s3Prefix, fileCount: files.length, totalBytes, durationSec, speedMBps, speedMbps }, `Packaged outputs uploaded to S3 at ${speedMBps} MB/s (${speedMbps} Mbps)`);
   }
 
   private async uploadFile(filePath: string, key: string) {

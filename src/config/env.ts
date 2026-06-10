@@ -48,7 +48,7 @@ const envSchema = z.object({
   INTERNAL_VIDEO_SECRET: optionalString,
   WORK_DIR: z.string().default('/tmp/lms-vid-transcode-pip'),
   MIN_FREE_DISK_BYTES: z.coerce.number().int().positive().default(15_000_000_000),
-  SEGMENT_DURATION_SECONDS: z.coerce.number().positive().default(2),
+  SEGMENT_DURATION_SECONDS: z.coerce.number().positive().default(8),
   FFMPEG_THREADS: z.coerce.number().int().positive().default(2),
   NVENC_PRESET: z.string().default('p5'),
   CLEANUP_WORK_DIR: boolFromString.default(true),
