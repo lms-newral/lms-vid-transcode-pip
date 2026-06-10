@@ -49,21 +49,37 @@ export class S3Service {
       throw new Error(`S3 object body is not readable for key ${key}`);
     }
 
+    const startTime = Date.now();
     await fsPromises.mkdir(path.dirname(destinationPath), { recursive: true });
     await pipeline(response.Body, fs.createWriteStream(destinationPath));
     const stat = await fsPromises.stat(destinationPath);
-    logger.info({ key, destinationPath, size: stat.size }, 'Source video downloaded');
+    
+    const durationSec = (Date.now() - startTime) / 1000;
+    const sizeMb = stat.size / (1024 * 1024);
+    const speedMbps = durationSec > 0 ? (sizeMb / durationSec).toFixed(2) : '0.00';
+
+    logger.info({ key, size: stat.size, durationSec, speedMbps }, `Source video downloaded at ${speedMbps} MB/s`);
   }
 
   async uploadDirectory(localDir: string, s3Prefix: string) {
     const files = await walkFiles(localDir);
     logger.info({ localDir, s3Prefix, fileCount: files.length }, 'Uploading packaged outputs to S3');
+    const startTime = Date.now();
+    let totalBytes = 0;
+
     await runLimited(files, 4, async (filePath) => {
+      const stat = await fsPromises.stat(filePath);
+      totalBytes += stat.size;
       const relative = path.relative(localDir, filePath).split(path.sep).join('/');
       const key = `${s3Prefix.replace(/\/$/, '')}/${relative}`;
       await this.uploadFile(filePath, key);
     });
-    logger.info({ s3Prefix, fileCount: files.length }, 'Packaged outputs uploaded to S3');
+
+    const durationSec = (Date.now() - startTime) / 1000;
+    const sizeMb = totalBytes / (1024 * 1024);
+    const speedMbps = durationSec > 0 ? (sizeMb / durationSec).toFixed(2) : '0.00';
+
+    logger.info({ s3Prefix, fileCount: files.length, totalBytes, durationSec, speedMbps }, `Packaged outputs uploaded to S3 at ${speedMbps} MB/s`);
   }
 
   private async uploadFile(filePath: string, key: string) {

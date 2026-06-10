@@ -9,7 +9,7 @@ export interface CommandResult {
 export async function runCommand(
   command: string,
   args: string[],
-  options: { cwd?: string; label?: string; env?: NodeJS.ProcessEnv } = {},
+  options: { cwd?: string; label?: string; env?: NodeJS.ProcessEnv; onProgress?: (line: string) => void } = {},
 ): Promise<CommandResult> {
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];
@@ -24,18 +24,43 @@ export async function runCommand(
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdoutChunks.push(chunk.toString('utf8'));
-      trimChunks(stdoutChunks);
-    });
+    let buffer = '';
+    let lastLogTime = Date.now();
+    let latestLine = '';
 
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderrChunks.push(chunk.toString('utf8'));
-      trimChunks(stderrChunks);
-    });
+    const processOutput = (chunk: Buffer, chunksArr: string[]) => {
+      const text = chunk.toString('utf8');
+      chunksArr.push(text);
+      trimChunks(chunksArr);
+
+      if (options.onProgress) {
+        buffer += text;
+        const lines = buffer.split(/\r?\n|\r/);
+        buffer = lines.pop() || '';
+        
+        for (const line of lines) {
+          if (line.trim()) latestLine = line.trim();
+        }
+
+        const now = Date.now();
+        if (now - lastLogTime > 5000 && latestLine) {
+          options.onProgress(latestLine);
+          lastLogTime = now;
+          latestLine = '';
+        }
+      }
+    };
+
+    child.stdout.on('data', (chunk: Buffer) => processOutput(chunk, stdoutChunks));
+    child.stderr.on('data', (chunk: Buffer) => processOutput(chunk, stderrChunks));
 
     child.on('error', reject);
     child.on('close', (code) => {
+      // Flush any remaining progress buffer
+      if (options.onProgress && latestLine) {
+        options.onProgress(latestLine);
+      }
+
       const stdout = stdoutChunks.join('');
       const stderr = stderrChunks.join('');
 

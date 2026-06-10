@@ -247,7 +247,15 @@ export class AbrDrmProcessor {
       hwaccel: 'cuda' 
     }, 'Executing hardware-accelerated NVENC FFmpeg command');
 
-    await runCommand('ffmpeg', args, { label: 'ffmpeg ABR transcode' });
+    await runCommand('ffmpeg', args, { 
+      label: 'ffmpeg ABR transcode',
+      onProgress: (line) => {
+        // FFmpeg progress lines usually contain frame=, fps=, time=, speed=
+        if (line.includes('time=') || line.includes('frame=')) {
+          logger.info({ progress: line }, 'FFmpeg Transcoding Progress');
+        }
+      }
+    });
 
     if (!probe.hasAudio) {
       logger.info('Input has no audio track; generating silent audio');
@@ -275,7 +283,12 @@ export class AbrDrmProcessor {
           '+faststart',
           path.join(intermediateDir, 'audio_raw.mp4'),
         ],
-        { label: 'ffmpeg silent audio' },
+        { 
+          label: 'ffmpeg silent audio',
+          onProgress: (line) => {
+            if (line.includes('time=')) logger.info({ progress: line }, 'FFmpeg Audio Generation Progress');
+          }
+        },
       );
     }
 
@@ -344,7 +357,15 @@ export class AbrDrmProcessor {
         '--hls_master_playlist_output',
         path.join(packageDir, 'master.m3u8'),
       ],
-      { label: 'shaka package DRM ABR' },
+      { 
+        label: 'shaka package DRM ABR',
+        onProgress: (line) => {
+          // Packager outputs percentage or frame count
+          if (line.includes('%') || line.includes('INFO:')) {
+            logger.info({ progress: line }, 'Shaka Packager Progress');
+          }
+        }
+      },
     );
   }
 
