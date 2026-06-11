@@ -199,7 +199,7 @@ export class AbrDrmProcessor {
     
     // The user explicitly requested to ALWAYS generate all renditions (1080p, 720p, 480p)
     // regardless of the source video's resolution.
-    const validRenditions = renditionSettings;
+    const validRenditions = [...renditionSettings];
 
     const args = [
       '-hide_banner',
