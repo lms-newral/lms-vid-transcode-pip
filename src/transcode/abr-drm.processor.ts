@@ -206,7 +206,6 @@ export class AbrDrmProcessor {
       '-nostdin',
       '-y',
       '-hwaccel', 'cuda',
-      '-hwaccel_output_format', 'cuda',
       '-extra_hw_frames', '8',
       '-i', inputPath,
     ];
@@ -230,7 +229,7 @@ export class AbrDrmProcessor {
         '-map',
         '0:v:0',
         '-vf',
-        `scale_cuda=w=${targetW}:h=${targetH}`,
+        `hwupload_cuda,scale_cuda=w=${targetW}:h=${targetH}`,
         '-c:v',
         'h264_nvenc',
         '-preset',
