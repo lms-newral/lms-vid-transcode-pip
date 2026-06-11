@@ -205,12 +205,10 @@ export class AbrDrmProcessor {
       '-hide_banner',
       '-nostdin',
       '-y',
-      '-hwaccel',
-      'cuda',
-      '-extra_hw_frames',
-      '8',
-      '-i',
-      inputPath,
+      '-hwaccel', 'cuda',
+      '-hwaccel_output_format', 'cuda',
+      '-extra_hw_frames', '8',
+      '-i', inputPath,
     ];
 
     for (const rendition of validRenditions) {
