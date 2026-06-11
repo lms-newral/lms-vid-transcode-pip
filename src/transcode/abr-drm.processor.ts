@@ -410,6 +410,7 @@ export class AbrDrmProcessor {
         '0',
         '--hls_playlist_type',
         'VOD',
+        '--generate_static_live_mpd',
         '--mpd_output',
         path.join(packageDir, 'manifest.mpd'),
         '--hls_master_playlist_output',
