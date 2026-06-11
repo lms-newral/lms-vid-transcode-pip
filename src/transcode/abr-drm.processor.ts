@@ -197,9 +197,9 @@ export class AbrDrmProcessor {
   private async transcodeRenditions(inputPath: string, intermediateDir: string, probe: VideoProbe) {
     const gopFrames = Math.max(24, Math.round(probe.fps * env.processing.segmentDurationSeconds));
     
-    // Filter out renditions that are strictly larger than the input video
+    // Filter out renditions that are strictly larger than the input video (with a 10% tolerance for cropped videos)
     // We always keep at least the lowest rendition if the input is smaller than all of them
-    const validRenditions = renditionSettings.filter((r, i) => r.height <= probe.height || i === renditionSettings.length - 1);
+    const validRenditions = renditionSettings.filter((r, i) => (r.height * 0.9) <= probe.height || i === renditionSettings.length - 1);
 
     const args = [
       '-hide_banner',
