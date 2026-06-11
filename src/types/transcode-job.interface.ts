@@ -22,6 +22,7 @@ export interface VideoProbe {
   height: number;
   fps: number;
   hasAudio: boolean;
+  videoCodec: string;
 }
 
 export interface TranscodeCallbackPayload {

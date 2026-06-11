@@ -9,6 +9,7 @@ interface FfprobeOutput {
   };
   streams?: Array<{
     codec_type?: string;
+    codec_name?: string;
     width?: number;
     height?: number;
     avg_frame_rate?: string;
@@ -57,6 +58,7 @@ export async function probeVideo(filePath: string): Promise<VideoProbe> {
     height: videoStream.height,
     fps: parseFps(videoStream.avg_frame_rate || videoStream.r_frame_rate || '25/1'),
     hasAudio: metadata.streams?.some((stream) => stream.codec_type === 'audio') || false,
+    videoCodec: videoStream.codec_name || '',
   };
 }
 
