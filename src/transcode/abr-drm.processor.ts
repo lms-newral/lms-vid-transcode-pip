@@ -197,9 +197,9 @@ export class AbrDrmProcessor {
   private async transcodeRenditions(inputPath: string, intermediateDir: string, probe: VideoProbe) {
     const gopFrames = Math.max(24, Math.round(probe.fps * env.processing.segmentDurationSeconds));
     
-    // Filter out renditions that are strictly larger than the input video (with a 10% tolerance for cropped videos)
-    // We always keep at least the lowest rendition if the input is smaller than all of them
-    const validRenditions = renditionSettings.filter((r, i) => (r.height * 0.9) <= probe.height || i === renditionSettings.length - 1);
+    // The user explicitly requested to ALWAYS generate all renditions (1080p, 720p, 480p)
+    // regardless of the source video's resolution.
+    const validRenditions = renditionSettings;
 
     const args = [
       '-hide_banner',
@@ -211,17 +211,9 @@ export class AbrDrmProcessor {
     ];
 
     for (const rendition of validRenditions) {
-      let targetH = Math.min(rendition.height, probe.height);
-      let targetW = Math.round(targetH * (probe.width / probe.height));
-
-      // Bounding box: if the calculated width exceeds the rendition's max width, scale by width instead
-      if (targetW > rendition.width) {
-        targetW = Math.min(rendition.width, probe.width);
-        targetH = Math.round(targetW / (probe.width / probe.height));
-      }
-
-      targetW = Math.round(targetW / 2) * 2;
-      targetH = Math.round(targetH / 2) * 2;
+      // The user explicitly requested standard resolutions without calculations
+      const targetW = rendition.width;
+      const targetH = rendition.height;
 
       logger.info({ rendition: rendition.name, targetW, targetH }, 'Calculated GPU scaling dimensions');
 
