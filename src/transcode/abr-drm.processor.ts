@@ -294,10 +294,29 @@ export class AbrDrmProcessor {
       onProgress: (line) => {
         // FFmpeg progress lines usually contain frame=, fps=, time=, speed=
         if (line.includes('time=') || line.includes('frame=')) {
-          logger.info({ progress: line }, 'FFmpeg Transcoding Progress');
+          logger.info({ progress: line }, 'FFmpeg Progress');
         }
       }
     });
+
+    // --- NEW STATS VERIFICATION LOGS ---
+    logger.info('Verifying encoded video durations before packaging...');
+    for (const rendition of validRenditions) {
+      try {
+        const intermediateVideoPath = path.join(intermediateDir, `${rendition.name}_raw.mp4`);
+        const encodedProbe = await probeVideo(intermediateVideoPath);
+        logger.info({
+          rendition: rendition.name,
+          encodedDurationSeconds: encodedProbe.duration,
+          expectedDuration: probe.duration,
+          encodedWidth: encodedProbe.width,
+          encodedHeight: encodedProbe.height
+        }, '✅ Encoded rendition verified successfully');
+      } catch (err) {
+        logger.warn({ rendition: rendition.name, error: err }, 'Failed to verify encoded rendition duration');
+      }
+    }
+    // -----------------------------------
 
     if (!probe.hasAudio) {
       logger.info('Input has no audio track; generating silent audio');
