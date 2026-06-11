@@ -9,7 +9,7 @@ COPY src ./src
 RUN npm run build
 
 # ── Stage 2: Download Shaka Packager ──
-FROM debian:bookworm-slim AS tool-downloader
+FROM ubuntu:22.04 AS tool-downloader
 ARG DEBIAN_FRONTEND=noninteractive
 RUN echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4 \
   && apt-get update \
