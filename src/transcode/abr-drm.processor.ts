@@ -92,32 +92,8 @@ export class AbrDrmProcessor {
       }, '✅ Step 2/6: Source video probed');
       await job.updateProgress(20);
 
-      // ── Step 3: Remux to normalize timestamps ──
-      // Strips MP4 edit lists and start_time offsets that cause CUDA to
-      // preserve non-zero PTS values. This is a copy (no re-encoding) = fast.
-      const normalizedInput = dirs.inputPath.replace(/\.mp4$/i, '_normalized.mp4');
-      const remuxStart = Date.now();
-      logger.info({ lessonId, input: dirs.inputPath, output: normalizedInput }, 'Remuxing source to normalize timestamps...');
-      await runCommand('ffmpeg', [
-        '-y',
-        '-fflags', '+genpts+igndts',
-        '-i', dirs.inputPath,
-        '-c', 'copy',
-        '-map_metadata', '-1',
-        '-movflags', '+faststart',
-        normalizedInput,
-      ], { label: 'ffmpeg remux normalize' });
-      const remuxSec = ((Date.now() - remuxStart) / 1000).toFixed(1);
-
-      // Verify the remux worked by probing the normalized file
-      const normalizedProbe = await probeVideo(normalizedInput);
-      logger.info({
-        lessonId,
-        remuxDurationSec: remuxSec,
-        originalDuration: probe.duration,
-        normalizedDuration: normalizedProbe.duration,
-        normalizedDurationFormatted: formatDuration(normalizedProbe.duration),
-      }, '✅ Step 3/6: Timestamps normalized via remux');
+      // Note: We used to remux here to fix timestamps, but instead we now 
+      // rely on -ignore_editlist and setpts in the transcode step itself.
 
       // ── Step 4: Generate thumbnail + GPU transcode ──
       await this.generateThumbnail(dirs.inputPath, path.join(dirs.packageDir, 'thumbnail.jpg'), probe.duration);
@@ -129,7 +105,7 @@ export class AbrDrmProcessor {
         segmentDuration: env.processing.segmentDurationSeconds,
         nvencPreset: env.processing.nvencPreset,
       }, 'Starting FFmpeg ABR GPU transcode...');
-      const validRenditions = await this.transcodeRenditions(normalizedInput, dirs.intermediateDir, normalizedProbe);
+      const validRenditions = await this.transcodeRenditions(dirs.inputPath, dirs.intermediateDir, probe);
       const transcodeSec = ((Date.now() - transcodeStart) / 1000).toFixed(1);
       logger.info({
         lessonId,
@@ -137,10 +113,10 @@ export class AbrDrmProcessor {
         transcodeDurationFormatted: formatDuration(Math.round(Number(transcodeSec))),
         intermediateDir: dirs.intermediateDir,
         variants: validRenditions.map(r => r.name),
-      }, '✅ Step 4/6: FFmpeg ABR transcode complete');
+      }, '✅ Step 3/6: FFmpeg ABR transcode complete');
       await job.updateProgress(60);
 
-      // ── Step 5: Shaka DRM Packaging ──
+      // ── Step 4: Shaka DRM Packaging ──
       const packageStart = Date.now();
       logger.info({ lessonId, packageDir: dirs.packageDir }, 'Starting Shaka DRM packaging...');
       await this.packageWithShaka(dirs.intermediateDir, dirs.packageDir, drmKeys, validRenditions);
@@ -149,10 +125,10 @@ export class AbrDrmProcessor {
         lessonId,
         packageDurationSec: packageSec,
         packageDir: dirs.packageDir,
-      }, '✅ Step 5/6: Shaka DRM packaging complete');
+      }, '✅ Step 4/6: Shaka DRM packaging complete');
       await job.updateProgress(78);
 
-      // ── Step 6: Upload to S3 ──
+      // ── Step 5: Upload to S3 ──
       const uploadStart = Date.now();
       logger.info({ lessonId }, 'Uploading packaged files to S3...');
       await this.s3.uploadDirectory(dirs.packageDir, outputPrefix);
@@ -160,7 +136,7 @@ export class AbrDrmProcessor {
       logger.info({
         lessonId,
         uploadDurationSec: uploadSec,
-      }, '✅ Step 6/6: All files uploaded to S3');
+      }, '✅ Step 5/6: All files uploaded to S3');
       await job.updateProgress(92);
 
       // ── Callback & Done ──
@@ -171,7 +147,7 @@ export class AbrDrmProcessor {
         thumbnailUrl: fsSync.existsSync(path.join(dirs.packageDir, 'thumbnail.jpg'))
           ? `${outputPrefix}/thumbnail.jpg`
           : undefined,
-        duration: normalizedProbe.duration,
+        duration: probe.duration,
         variants: [],
         isDrm: true,
         dashManifestUrl: `${outputPrefix}/manifest.mpd`,
@@ -184,10 +160,9 @@ export class AbrDrmProcessor {
         lessonId,
         totalDurationSec: totalSec,
         totalDurationFormatted: formatDuration(Math.round(Number(totalSec))),
-        videoDuration: formatDuration(normalizedProbe.duration),
+        videoDuration: formatDuration(probe.duration),
         steps: {
           download: `${dlSec}s`,
-          remux: `${remuxSec}s`,
           transcode: `${transcodeSec}s`,
           package: `${packageSec}s`,
           upload: `${uploadSec}s`,
@@ -234,6 +209,7 @@ export class AbrDrmProcessor {
       '+genpts+discardcorrupt',
       '-err_detect',
       'ignore_err',
+      '-ignore_editlist', '1',
       '-start_at_zero',
       '-avoid_negative_ts',
       'make_zero',
@@ -270,7 +246,7 @@ export class AbrDrmProcessor {
         '-map',
         '0:v:0',
         '-vf',
-        `scale_cuda=w=${targetW}:h=${targetH}`,
+        `setpts=PTS-STARTPTS,scale_cuda=w=${targetW}:h=${targetH}`,
         '-c:v',
         'h264_nvenc',
         '-preset',
@@ -467,6 +443,8 @@ export class AbrDrmProcessor {
         '-hide_banner',
         '-nostdin',
         '-y',
+        '-ignore_editlist',
+        '1',
         '-ss',
         String(seekSeconds),
         '-i',
