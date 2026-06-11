@@ -37,7 +37,6 @@ export class S3Service {
   }
 
   async downloadToFile(key: string, destinationPath: string) {
-    logger.info({ key, destinationPath }, 'Downloading source video from S3');
     const response = await this.client.send(
       new GetObjectCommand({
         Bucket: env.s3.bucket,
@@ -49,11 +48,48 @@ export class S3Service {
       throw new Error(`S3 object body is not readable for key ${key}`);
     }
 
-    const startTime = Date.now();
+    const totalBytes = response.ContentLength || 0;
+    const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
+    logger.info({ key, destinationPath, totalBytes, totalMB: `${totalMB} MB` }, 'Downloading source video from S3');
+
     await fsPromises.mkdir(path.dirname(destinationPath), { recursive: true });
-    await pipeline(response.Body, fs.createWriteStream(destinationPath));
+
+    const startTime = Date.now();
+    let downloadedBytes = 0;
+    let lastLogTime = Date.now();
+
+    // Create a pass-through transform that tracks progress
+    const { Transform } = await import('node:stream');
+    const progressTracker = new Transform({
+      transform(chunk: Buffer, _encoding: string, callback: () => void) {
+        downloadedBytes += chunk.length;
+        const now = Date.now();
+
+        // Log every 5 seconds
+        if (now - lastLogTime > 5000) {
+          const elapsedSec = (now - startTime) / 1000;
+          const dlMB = (downloadedBytes / (1024 * 1024)).toFixed(1);
+          const speedMBps = (downloadedBytes / (1024 * 1024) / elapsedSec).toFixed(1);
+          const percent = totalBytes > 0 ? Math.round((downloadedBytes / totalBytes) * 100) : '?';
+          const remainingBytes = totalBytes - downloadedBytes;
+          const etaSec = remainingBytes > 0 && downloadedBytes > 0
+            ? Math.round((remainingBytes / downloadedBytes) * elapsedSec)
+            : 0;
+
+          logger.info(
+            `⬇️  Download: ${dlMB}/${totalMB} MB (${percent}%) at ${speedMBps} MB/s — ETA ${etaSec}s`,
+          );
+          lastLogTime = now;
+        }
+
+        this.push(chunk);
+        callback();
+      },
+    });
+
+    await pipeline(response.Body, progressTracker, fs.createWriteStream(destinationPath));
     const stat = await fsPromises.stat(destinationPath);
-    
+
     const durationSec = (Date.now() - startTime) / 1000;
     const sizeMb = stat.size / (1024 * 1024);
     const speedMBps = durationSec > 0 ? (sizeMb / durationSec).toFixed(2) : '0.00';
